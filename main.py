@@ -3,195 +3,116 @@ from datetime import datetime
 import json
 import os
 
-st.set_page_config(page_title="TradeMaster Pro", layout="centered", page_icon="🔥")
-st.title("🔥 TradeMaster Pro - Final Version")
-
-def get_today_folder():
-    return os.path.join("trading_data", datetime.now().strftime("%Y/%m/%d"))
-
-def default_data():
-    return {
-        "initial_capital": 10000.0,
-        "current_capital": 10000.0,
-        "base_risk": 1.0,
-        "trades": [],
-        "session_wins": 0,
-        "session_losses": 0,
-        "daily_limit": 5,
-        "recovery_mode": False,
-        "total_profit": 0.0,
-        "total_loss": 0.0
-    }
+st.set_page_config(page_title="Intellectual Trader", layout="centered", page_icon="🧠")
+st.title("🧠 Intellectual Trader")
+st.markdown("**Best Money Management System**")
 
 def load_data():
-    folder = get_today_folder()
-    file = os.path.join(folder, "session.json")
+    file = "trading_data/session.json"
     if os.path.exists(file):
         try:
             with open(file, "r", encoding="utf-8") as f:
-                d = json.load(f)
-            # Merge missing defaults
-            for k, v in default_data().items():
-                if k not in d:
-                    d[k] = v
-            return d
+                return json.load(f)
         except:
-            return default_data()
-    return default_data()
+            pass
+    return {
+        "initial_capital": 10000.0,
+        "current_capital": 10000.0,
+        "daily_target_percent": 13.0,
+        "daily_stop_loss_percent": 5.0,
+        "base_risk_percent": 1.0,
+        "trades": [],
+        "total_profit": 0.0,
+        "total_loss": 0.0,
+        "recovery_mode": False
+    }
 
-def save_data(data):
-    folder = get_today_folder()
-    os.makedirs(folder, exist_ok=True)
-    file = os.path.join(folder, "session.json")
-    with open(file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def calculate_suggestion(data):
-    capital = data.get("current_capital", 10000.0)
-    base = data.get("base_risk", 1.0)
-    losses = data.get("session_losses", 0)
-    wins = data.get("session_wins", 0)
-    recovery = data.get("recovery_mode", False)
-    
-    if recovery:
-        risk_pct = min(3.0, base * 1.6)
-        advice = "RECOVERY MODE - Aggressive Recovery"
-    elif losses >= 2:
-        risk_pct = min(2.0, base * 1.3)
-        advice = "Loss Streak - Careful Increase"
-    elif wins >= 2:
-        risk_pct = base * 1.5
-        advice = "Good Streak - Risk Increased"
-    else:
-        risk_pct = base
-        advice = "Normal Trade"
-        
-    amount = max(100, round(capital * risk_pct / 100, 2))
-    return risk_pct, amount, advice
-
-# Initialize session state
 if "data" not in st.session_state:
     st.session_state.data = load_data()
-if "capital_locked" not in st.session_state:
-    st.session_state.capital_locked = False
-if "confirm_clear" not in st.session_state:
-    st.session_state.confirm_clear = False
 
 data = st.session_state.data
 
-# Settings Sidebar
+# Sidebar Settings
 st.sidebar.header("⚙️ Settings")
-initial_cap = st.sidebar.number_input("Initial Capital ($)", value=float(data.get("initial_capital", 10000.0)), step=100.0, disabled=st.session_state.capital_locked)
-base_risk = st.sidebar.number_input("Base Risk (%)", value=float(data.get("base_risk", 1.0)), min_value=0.1, step=0.1)
-
-if st.sidebar.button("🔒 Lock Initial Capital", disabled=st.session_state.capital_locked):
-    data["initial_capital"] = initial_cap
-    data["current_capital"] = initial_cap
-    st.session_state.capital_locked = True
-    save_data(data)
-    st.sidebar.success("Initial Capital Locked!")
-    st.rerun()
+data["initial_capital"] = st.sidebar.number_input("Initial Capital ($)", value=data["initial_capital"], step=100.0)
+data["daily_target_percent"] = st.sidebar.number_input("Daily Profit Target (%)", value=data["daily_target_percent"], step=0.5)
+data["daily_stop_loss_percent"] = st.sidebar.number_input("Daily Stop Loss (%)", value=data["daily_stop_loss_percent"], step=0.5)
+data["base_risk_percent"] = st.sidebar.number_input("Base Risk per Trade (%)", value=data["base_risk_percent"], step=0.1)
+data["recovery_mode"] = st.sidebar.checkbox("Recovery Mode", value=data.get("recovery_mode", False))
 
 if st.sidebar.button("💾 Save Settings"):
-    data["base_risk"] = base_risk
-    save_data(data)
-    st.sidebar.success("Settings Saved")
-    st.rerun()
+    os.makedirs("trading_data", exist_ok=True)
+    with open("trading_data/session.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    st.sidebar.success("✅ Settings Saved!")
 
-recovery_mode = st.sidebar.checkbox("🔄 Recovery Mode (Extra 5 Trades)", value=data.get("recovery_mode", False))
-if recovery_mode != data.get("recovery_mode", False):
-    data["recovery_mode"] = recovery_mode
-    save_data(data)
-    st.rerun()
+# Calculations
+capital = data["current_capital"]
+daily_target = capital * (data["daily_target_percent"] / 100)
+daily_stop = capital * (data["daily_stop_loss_percent"] / 100)
+base_risk = capital * (data["base_risk_percent"] / 100)
 
-# Main Display
-st.subheader("📊 Status")
-total_trades = len(data.get("trades", []))
-limit = data.get("daily_limit", 5) * (2 if data.get("recovery_mode", False) else 1)
-
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Current Capital", f"${data.get('current_capital', 10000):.2f}")
-col2.metric("Total Trades", total_trades)
-wins = sum(1 for t in data.get("trades", []) if t.get("result") == "WIN")
-winrate = round(wins / total_trades * 100, 2) if total_trades > 0 else 0
-col3.metric("Win Rate", f"{winrate}%")
-col4.metric("Trade Limit", f"{total_trades}/{limit}")
+st.subheader("📊 Current Status")
+col1, col2, col3 = st.columns(3)
+col1.metric("Capital", f"${capital:.2f}")
+col2.metric("Daily Target", f"${daily_target:.2f} ({data['daily_target_percent']}%)")
+col3.metric("Daily Stop Loss", f"${daily_stop:.2f} ({data['daily_stop_loss_percent']}%)")
 
 # AI Suggestion
 st.subheader("🤖 AI Next Trade Suggestion")
-risk_pct, suggested_amount, advice = calculate_suggestion(data)
-st.info(f"Current Capital: ${data['current_capital']:.2f}\n\nSuggested Risk: {risk_pct:.2f}% → Amount: ${suggested_amount:.2f}\n\n💡 {advice}")
+suggested_amount = max(100, round(base_risk, 2))
+
+if data.get("recovery_mode"):
+    suggested_amount = max(100, round(suggested_amount * 1.6, 2))
+    st.info(f"**RECOVERY MODE**\nSuggested Amount: **${suggested_amount:.2f}**")
+else:
+    st.info(f"**Normal Mode**\nSuggested Amount: **${suggested_amount:.2f}**")
 
 # Trade Entry
 st.subheader("New Trade")
 symbol = st.text_input("Symbol", placeholder="EURUSD, BTC, GOLD")
-payout = st.number_input("Payout %", value=0.0, step=1.0)
+payout = st.number_input("Payout % (if WIN)", value=0.0, step=1.0)
 
 c1, c2 = st.columns(2)
-
-def add_trade(is_win):
-    if total_trades >= limit:
-        st.error("আজকের ট্রেড লিমিট শেষ!")
-        return
-    
-    sym = symbol.strip() or "Unknown"
-    pay = payout
-    _, suggested_amt, _ = calculate_suggestion(data)
-    
-    data.setdefault("trades", []).append({
-        "time": datetime.now().strftime("%H:%M"),
-        "symbol": sym,
-        "result": "WIN" if is_win else "LOSS",
-        "payout": pay,
-        "amount": suggested_amt
-    })
-    
-    if is_win:
-        profit = suggested_amt * (pay/100 if pay > 0 else 1.5)
-        data["current_capital"] += profit
-        data["total_profit"] = data.get("total_profit", 0) + profit
-        data["session_wins"] = data.get("session_wins", 0) + 1
-        data["session_losses"] = 0
-        st.success("WIN Recorded!")
-    else:
-        data["current_capital"] -= suggested_amt
-        data["total_loss"] = data.get("total_loss", 0) + suggested_amt
-        data["session_losses"] = data.get("session_losses", 0) + 1
-        data["session_wins"] = 0
-        st.error("LOSS Recorded!")
-        
-    save_data(data)
+if c1.button("✅ WIN", use_container_width=True):
+    amount = suggested_amount
+    profit = amount * (payout / 100 if payout > 0 else 1.8)
+    data["current_capital"] += profit
+    data["total_profit"] += profit
+    data["session_wins"] = data.get("session_wins", 0) + 1
+    data["session_losses"] = 0
+    data.setdefault("trades", []).append({"time": datetime.now().strftime("%H:%M"), "symbol": symbol or "Unknown", "result": "WIN", "amount": amount, "payout": payout})
+    st.success("WIN Recorded!")
     st.rerun()
 
-if c1.button("✅ WIN TRADE", use_container_width=True):
-    add_trade(True)
+if c2.button("❌ LOSS", use_container_width=True):
+    amount = suggested_amount
+    data["current_capital"] = max(100, data["current_capital"] - amount)
+    data["total_loss"] += amount
+    data["session_losses"] = data.get("session_losses", 0) + 1
+    data["session_wins"] = 0
+    data.setdefault("trades", []).append({"time": datetime.now().strftime("%H:%M"), "symbol": symbol or "Unknown", "result": "LOSS", "amount": amount, "payout": payout})
+    st.error("LOSS Recorded!")
+    st.rerun()
 
-if c2.button("❌ LOSS TRADE", use_container_width=True):
-    add_trade(False)
+# Summary
+st.subheader("📈 Full Summary")
+st.write(f"**Total Profit:** +${data.get('total_profit',0):.2f}")
+st.write(f"**Total Loss:** -${data.get('total_loss',0):.2f}")
+st.write(f"**Net P/L:** ${data.get('total_profit',0) - data.get('total_loss',0):.2f}")
 
 # History
-st.subheader("📜 History")
+st.subheader("Trade History")
 if data.get("trades"):
     for t in reversed(data["trades"]):
         emoji = "✅" if t.get("result") == "WIN" else "❌"
-        st.write(f"{emoji} **{t['time']}** - {t['symbol']} | Result: {t['result']} | Payout: {t.get('payout', 0)}% | Amount: ${t.get('amount', 0):.2f}")
+        st.write(f"{emoji} **{t['time']}** - {t['symbol']} | **{t['result']}** | Amount: ${t['amount']:.2f}")
 else:
     st.info("No trades yet.")
 
-# Controls
-st.write("---")
-if st.button("🗑️ Clear Session", type="primary"):
-    st.session_state.confirm_clear = True
-
-if st.session_state.confirm_clear:
-    st.warning("পুরো সেশন ক্লিয়ার করবেন?")
-    cc1, cc2 = st.columns(2)
-    if cc1.button("Yes, Clear All", type="primary"):
-        st.session_state.data = default_data()
-        save_data(st.session_state.data)
-        st.session_state.capital_locked = False
-        st.session_state.confirm_clear = False
-        st.rerun()
-    if cc2.button("Cancel"):
-        st.session_state.confirm_clear = False
+# Clear
+if st.button("🗑️ Clear All History"):
+    if st.checkbox("Confirm Delete All?"):
+        st.session_state.data = load_data()
+        st.success("History Cleared!")
         st.rerun()
