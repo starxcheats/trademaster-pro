@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="Intellectual Trader", layout="centered", page_icon="🧠")
 st.title("🧠 Intellectual Trader")
-st.markdown("**Best Money Management System**")
+st.markdown("**Advanced Compounding Money Management**")
 
 def load_data():
     file = "trading_data/session.json"
@@ -21,6 +21,7 @@ def load_data():
         "daily_target_percent": 13.0,
         "daily_stop_loss_percent": 5.0,
         "base_risk_percent": 1.0,
+        "compounding_steps": 3,
         "trades": [],
         "total_profit": 0.0,
         "total_loss": 0.0,
@@ -32,49 +33,40 @@ if "data" not in st.session_state:
 
 data = st.session_state.data
 
-# Sidebar
+# Sidebar Settings
 st.sidebar.header("⚙️ Settings")
-initial_cap = st.sidebar.number_input("Initial Capital ($)", value=float(data.get("initial_capital", 10000.0)), step=100.0)
-if st.sidebar.button("Reset Current Capital to Initial"):
-    data["current_capital"] = initial_cap
-    st.sidebar.success("Current Capital Reset!")
-
-data["daily_target_percent"] = st.sidebar.number_input("Daily Profit Target (%)", value=data.get("daily_target_percent", 13.0), step=0.5)
-data["daily_stop_loss_percent"] = st.sidebar.number_input("Daily Stop Loss (%)", value=data.get("daily_stop_loss_percent", 5.0), step=0.5)
-data["base_risk_percent"] = st.sidebar.number_input("Base Risk per Trade (%)", value=data.get("base_risk_percent", 1.0), step=0.1)
+data["initial_capital"] = st.sidebar.number_input("Initial Capital ($)", value=data["initial_capital"], step=100.0)
+data["daily_target_percent"] = st.sidebar.number_input("Daily Target (%)", value=data["daily_target_percent"], step=0.5)
+data["daily_stop_loss_percent"] = st.sidebar.number_input("Daily Stop Loss (%)", value=data["daily_stop_loss_percent"], step=0.5)
+data["base_risk_percent"] = st.sidebar.number_input("Base Risk per Trade (%)", value=data["base_risk_percent"], step=0.1)
+data["compounding_steps"] = st.sidebar.slider("Compounding Steps", 1, 5, data.get("compounding_steps", 3))
 data["recovery_mode"] = st.sidebar.checkbox("Recovery Mode", value=data.get("recovery_mode", False))
 
-if st.sidebar.button("💾 Save All Settings"):
-    data["initial_capital"] = initial_cap
+if st.sidebar.button("💾 Save Settings"):
     os.makedirs("trading_data", exist_ok=True)
     with open("trading_data/session.json", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    st.sidebar.success("✅ All Settings Saved!")
+    st.sidebar.success("✅ Saved!")
 
-# Main Display
-st.subheader("📊 Current Status")
-col1, col2 = st.columns(2)
-col1.metric("Initial Capital", f"${data.get('initial_capital', 10000):.2f}")
-col2.metric("Current Capital", f"${data.get('current_capital', 10000):.2f}", 
-            f"{data['current_capital'] - data['initial_capital']:.2f}")
+# Calculations
+capital = data["current_capital"]
+daily_target = capital * (data["daily_target_percent"] / 100)
+daily_stop = capital * (data["daily_stop_loss_percent"] / 100)
+base_amount = capital * (data["base_risk_percent"] / 100)
 
-daily_target = data["current_capital"] * (data["daily_target_percent"] / 100)
-daily_stop = data["current_capital"] * (data["daily_stop_loss_percent"] / 100)
-
+st.subheader("📊 Status")
+st.metric("Current Capital", f"${capital:.2f}")
 st.metric("Daily Target", f"${daily_target:.2f} ({data['daily_target_percent']}%)")
 st.metric("Daily Stop Loss", f"${daily_stop:.2f} ({data['daily_stop_loss_percent']}%)")
 
-# AI Suggestion
+# AI Suggestion with Compounding
 st.subheader("🤖 AI Next Trade Suggestion")
-capital = data["current_capital"]
-risk = data["base_risk_percent"]
-suggested = max(100, round(capital * risk / 100, 2))
-
 if data.get("recovery_mode"):
-    suggested = max(100, round(suggested * 1.6, 2))
-    st.info(f"**RECOVERY MODE**\nSuggested Amount: **${suggested:.2f}**")
+    suggested = max(100, round(base_amount * 1.8, 2))
+    st.info(f"**RECOVERY MODE**\nSuggested: **${suggested:.2f}**")
 else:
-    st.info(f"**Normal Mode**\nSuggested Amount: **${suggested:.2f}**")
+    suggested = max(100, round(base_amount, 2))
+    st.info(f"**Normal / Compounding Trade**\nSuggested Amount: **${suggested:.2f}**")
 
 # Trade Entry
 st.subheader("New Trade")
@@ -84,31 +76,33 @@ payout = st.number_input("Payout % (if WIN)", value=0.0, step=1.0)
 c1, c2 = st.columns(2)
 if c1.button("✅ WIN TRADE", use_container_width=True):
     amount = suggested
-    profit = amount * (payout/100 if payout > 0 else 1.8)
+    profit = amount * (payout / 100 if payout > 0 else 1.8)
     data["current_capital"] += profit
-    data["total_profit"] = data.get("total_profit", 0) + profit
+    data["total_profit"] += profit
     data["session_wins"] = data.get("session_wins", 0) + 1
     data["session_losses"] = 0
     data.setdefault("trades", []).append({"time": datetime.now().strftime("%H:%M"), "symbol": symbol or "Unknown", "result": "WIN", "amount": amount})
-    st.success("WIN Recorded!")
+    st.success("WIN + Compounding Applied!")
     st.rerun()
 
 if c2.button("❌ LOSS TRADE", use_container_width=True):
     amount = suggested
     data["current_capital"] = max(100, data["current_capital"] - amount)
-    data["total_loss"] = data.get("total_loss", 0) + amount
+    data["total_loss"] += amount
     data["session_losses"] = data.get("session_losses", 0) + 1
     data["session_wins"] = 0
     data.setdefault("trades", []).append({"time": datetime.now().strftime("%H:%M"), "symbol": symbol or "Unknown", "result": "LOSS", "amount": amount})
-    st.error("LOSS Recorded!")
+    st.error("LOSS - Reset to Base Amount for Next Trade")
     st.rerun()
 
-# Summary & History
-st.subheader("📈 Summary")
+# Summary
+st.subheader("📈 Full Summary")
 st.write(f"**Total Profit:** +${data.get('total_profit',0):.2f}")
 st.write(f"**Total Loss:** -${data.get('total_loss',0):.2f}")
+st.write(f"**Net:** ${data.get('total_profit',0) - data.get('total_loss',0):.2f}")
 
-st.subheader("📜 Trade History")
+# History
+st.subheader("📜 History")
 if data.get("trades"):
     for t in reversed(data["trades"]):
         emoji = "✅" if t.get("result") == "WIN" else "❌"
@@ -117,7 +111,7 @@ else:
     st.info("No trades yet.")
 
 if st.button("🗑️ Clear All History"):
-    if st.checkbox("Confirm Delete All?"):
+    if st.checkbox("Confirm?"):
         st.session_state.data = load_data()
-        st.success("History Cleared!")
+        st.success("All Cleared!")
         st.rerun()
