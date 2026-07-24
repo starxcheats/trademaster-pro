@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="Intellectual Trader", layout="centered", page_icon="🧠")
 st.title("🧠 Intellectual Trader")
-st.markdown("**Dynamic Compounding Money Management**")
+st.markdown("**Fixed Risk + Compounding System**")
 
 def load_data():
     file = "trading_data/session.json"
@@ -18,9 +18,9 @@ def load_data():
     return {
         "initial_capital": 10000.0,
         "current_capital": 10000.0,
+        "fixed_risk_amount": 250.0,
         "daily_target_percent": 13.0,
         "daily_stop_loss_percent": 5.0,
-        "base_risk_percent": 1.0,
         "trades": [],
         "total_profit": 0.0,
         "total_loss": 0.0,
@@ -32,12 +32,12 @@ if "data" not in st.session_state:
 
 data = st.session_state.data
 
-# Sidebar
+# Settings
 st.sidebar.header("⚙️ Settings")
 data["initial_capital"] = st.sidebar.number_input("Initial Capital ($)", value=data["initial_capital"], step=100.0)
-data["daily_target_percent"] = st.sidebar.number_input("Daily Target (%)", value=data["daily_target_percent"], step=0.5)
-data["daily_stop_loss_percent"] = st.sidebar.number_input("Daily Stop Loss (%)", value=data["daily_stop_loss_percent"], step=0.5)
-data["base_risk_percent"] = st.sidebar.number_input("Base Risk per Trade (%)", value=data["base_risk_percent"], step=0.1)
+data["fixed_risk_amount"] = st.sidebar.number_input("Fixed Risk Amount ($)", value=data.get("fixed_risk_amount", 250.0), step=10.0)
+data["daily_target_percent"] = st.sidebar.number_input("Daily Target (%)", value=data.get("daily_target_percent", 13.0), step=0.5)
+data["daily_stop_loss_percent"] = st.sidebar.number_input("Daily Stop Loss (%)", value=data.get("daily_stop_loss_percent", 5.0), step=0.5)
 data["recovery_mode"] = st.sidebar.checkbox("Recovery Mode", value=data.get("recovery_mode", False))
 
 if st.sidebar.button("💾 Save Settings"):
@@ -46,22 +46,22 @@ if st.sidebar.button("💾 Save Settings"):
         json.dump(data, f, indent=2)
     st.sidebar.success("✅ Saved!")
 
-# Main Calculations (Dynamic)
+# Calculations
 capital = data["current_capital"]
-base_risk_amount = max(100, round(capital * data["base_risk_percent"] / 100, 2))
+fixed_risk = data["fixed_risk_amount"]
 
 st.subheader("📊 Status")
 st.metric("Current Capital", f"${capital:.2f}")
-st.metric("Base Risk Amount (Dynamic)", f"${base_risk_amount:.2f} ({data['base_risk_percent']}%)")
+st.metric("Fixed Risk Amount", f"${fixed_risk:.2f}")
 
 # AI Suggestion
 st.subheader("🤖 AI Next Trade Suggestion")
 if data.get("recovery_mode"):
-    suggested = max(100, round(base_risk_amount * 1.8, 2))
+    suggested = fixed_risk * 1.8
     st.info(f"**RECOVERY MODE**\nSuggested Amount: **${suggested:.2f}**")
 else:
-    suggested = base_risk_amount
-    st.info(f"**Normal Mode**\nSuggested Amount: **${suggested:.2f}**")
+    suggested = fixed_risk
+    st.info(f"**Normal / Compounding Mode**\nSuggested Amount: **${suggested:.2f}**")
 
 # Trade Entry
 st.subheader("New Trade")
@@ -87,7 +87,7 @@ if c2.button("❌ LOSS TRADE", use_container_width=True):
     data["session_losses"] = data.get("session_losses", 0) + 1
     data["session_wins"] = 0
     data.setdefault("trades", []).append({"time": datetime.now().strftime("%H:%M"), "symbol": symbol or "Unknown", "result": "LOSS", "amount": amount})
-    st.error("LOSS - Next Trade will use new Base % of Updated Capital")
+    st.error("LOSS - Next Trade will use Fixed Risk Amount again")
     st.rerun()
 
 # Summary
@@ -104,7 +104,7 @@ else:
     st.info("No trades yet.")
 
 if st.button("🗑️ Clear All History"):
-    if st.checkbox("Confirm?"):
+    if st.checkbox("Confirm Delete?"):
         st.session_state.data = load_data()
-        st.success("Cleared!")
+        st.success("History Cleared!")
         st.rerun()
