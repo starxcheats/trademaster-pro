@@ -30,8 +30,9 @@ if 'data' not in st.session_state:
             'current_capital': 10000.0,
             'base_amount': 250.0,
             'compound_steps': 3,
-            'profit_target': 1000.0,
-            'loss_target': 500.0,
+            'payout_pct': 90.0,
+            'profit_target_pct': 10.0,      # Changed to percentage
+            'loss_target_pct': 5.0,         # Changed to percentage
             'current_step': 1,
             'current_cycle': 1,
             'trade_history': [],
@@ -48,8 +49,11 @@ st.sidebar.header("⚙️ Settings")
 data['initial_capital'] = st.sidebar.number_input("Initial Capital", value=data['initial_capital'], step=100.0)
 data['base_amount'] = st.sidebar.number_input("Base Trade Amount", value=data['base_amount'], step=50.0)
 data['compound_steps'] = st.sidebar.slider("Compounding Steps", 1, 10, data['compound_steps'])
-data['profit_target'] = st.sidebar.number_input("Profit Target", value=data['profit_target'], step=100.0)
-data['loss_target'] = st.sidebar.number_input("Loss Target", value=data['loss_target'], step=100.0)
+data['payout_pct'] = st.sidebar.number_input("Payout % on WIN", value=data['payout_pct'], step=5.0)
+
+# New Percentage Targets
+data['profit_target_pct'] = st.sidebar.number_input("Profit Target (%)", value=data['profit_target_pct'], step=1.0, min_value=0.1)
+data['loss_target_pct'] = st.sidebar.number_input("Loss Target (%)", value=data['loss_target_pct'], step=1.0, min_value=0.1)
 
 if st.sidebar.button("💾 Save Settings & Reset Session"):
     data['current_capital'] = data['initial_capital']
@@ -79,78 +83,86 @@ with col4:
 if data['locked']:
     st.error(f"🚫 TRADING LOCKED: {data['lock_reason']}")
 
-# Trade Section
+# Calculate absolute targets for display
+profit_target_amount = data['initial_capital'] * (data['profit_target_pct'] / 100)
+loss_target_amount = data['initial_capital'] * (data['loss_target_pct'] / 100)
+
+# Trade Buttons
 st.subheader("Trade Action")
 
-# Next Trade Amount Preview
-next_amount = data['base_amount'] if data['current_step'] == 1 else \
-              (data['trade_history'][-1]['trade_amount'] + data['trade_history'][-1]['profit'] if data['trade_history'] else data['base_amount'])
+btn_col1, btn_col2, btn_col3, btn_col4 = st.columns([2,2,1,1])
 
-st.info(f"**Next Trade Amount:** ৳{next_amount:,.2f} | Current Step: {data['current_step']}")
+with btn_col1:
+    if st.button("✅ WIN", type="primary", use_container_width=True, disabled=data['locked']):
+        trade_amount = data['base_amount'] if data['current_step'] == 1 else \
+                      (data['trade_history'][-1]['trade_amount'] + data['trade_history'][-1]['profit'] if data['trade_history'] else data['base_amount'])
+        
+        profit = trade_amount * (data['payout_pct'] / 100)
+        data['current_capital'] += profit
+        
+        data['trade_history'].append({
+            'trade_no': len(data['trade_history']) + 1,
+            'cycle': data['current_cycle'],
+            'step': data['current_step'],
+            'time': datetime.now().strftime("%H:%M:%S"),
+            'trade_amount': round(trade_amount, 2),
+            'profit': round(profit, 2),
+            'capital_after': round(data['current_capital'], 2),
+            'result': 'WIN'
+        })
+        
+        data['current_step'] += 1
+        if data['current_step'] > data['compound_steps']:
+            data['current_step'] = 1
+            data['current_cycle'] += 1
+        
+        # Check profit target (percentage based)
+        if (data['current_capital'] - data['initial_capital']) >= profit_target_amount:
+            data['locked'] = True
+            data['lock_reason'] = f"PROFIT TARGET ACHIEVED ({data['profit_target_pct']}%)"
+        
+        save_data(data)
+        st.rerun()
 
-return_pct = st.number_input("Trade Return % (Positive for Profit, Negative for Loss)", 
-                            value=0.0, step=0.1, format="%.2f")
+with btn_col2:
+    if st.button("❌ LOSS", type="secondary", use_container_width=True, disabled=data['locked']):
+        trade_amount = data['base_amount'] if data['current_step'] == 1 else \
+                      (data['trade_history'][-1]['trade_amount'] + data['trade_history'][-1]['profit'] if data['trade_history'] else data['base_amount'])
+        
+        loss = -trade_amount
+        data['current_capital'] += loss
+        
+        data['trade_history'].append({
+            'trade_no': len(data['trade_history']) + 1,
+            'cycle': data['current_cycle'],
+            'step': data['current_step'],
+            'time': datetime.now().strftime("%H:%M:%S"),
+            'trade_amount': round(trade_amount, 2),
+            'profit': round(loss, 2),
+            'capital_after': round(data['current_capital'], 2),
+            'result': 'LOSS'
+        })
+        
+        data['current_step'] = 1  # Reset on loss
+        
+        # Check loss target (percentage based)
+        if (data['initial_capital'] - data['current_capital']) >= loss_target_amount:
+            data['locked'] = True
+            data['lock_reason'] = f"LOSS TARGET HIT ({data['loss_target_pct']}%)"
+        
+        save_data(data)
+        st.rerun()
 
-col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 1])
-
-with col_btn1:
-    if st.button("✅ Record WIN/LOSS", type="primary", use_container_width=True, disabled=data['locked']):
-        if return_pct == 0:
-            st.warning("Please enter a non-zero percentage")
-        else:
-            trade_amount = next_amount
-            
-            # Calculate profit/loss based on percentage
-            pnl = trade_amount * (return_pct / 100)
-            data['current_capital'] += pnl
-            
-            data['trade_history'].append({
-                'trade_no': len(data['trade_history']) + 1,
-                'cycle': data['current_cycle'],
-                'step': data['current_step'],
-                'time': datetime.now().strftime("%H:%M:%S"),
-                'trade_amount': round(trade_amount, 2),
-                'return_pct': round(return_pct, 2),
-                'profit': round(pnl, 2),
-                'capital_after': round(data['current_capital'], 2),
-                'result': 'WIN' if return_pct >= 0 else 'LOSS'
-            })
-            
-            # Update Cycle & Step
-            if return_pct >= 0:  # WIN
-                data['current_step'] += 1
-                if data['current_step'] > data['compound_steps']:
-                    data['current_step'] = 1
-                    data['current_cycle'] += 1
-                    st.success(f"🎉 Cycle {data['current_cycle']-1} Completed!")
-            else:  # LOSS
-                data['current_step'] = 1
-                st.warning("🔄 Loss হওয়ায় Cycle Reset হয়েছে।")
-            
-            # Check Targets
-            total_profit = data['current_capital'] - data['initial_capital']
-            total_loss = data['initial_capital'] - data['current_capital']
-            
-            if total_profit >= data['profit_target']:
-                data['locked'] = True
-                data['lock_reason'] = f"PROFIT TARGET ACHIEVED (+৳{total_profit:,.2f})"
-            elif total_loss >= data['loss_target']:
-                data['locked'] = True
-                data['lock_reason'] = f"LOSS TARGET HIT (-৳{total_loss:,.2f})"
-            
-            save_data(data)
-            st.rerun()
-
-with col_btn2:
-    if st.button("🔄 Reset Cycle", use_container_width=True):
+with btn_col3:
+    if st.button("🔄 Reset Cycle"):
         data['current_step'] = 1
         save_data(data)
         st.success("Cycle Reset!")
         st.rerun()
 
-with col_btn3:
+with btn_col4:
     if st.button("🗑 Clear All"):
-        if st.checkbox("Confirm Clear All?"):
+        if st.checkbox("Confirm Clear?"):
             data['current_capital'] = data['initial_capital']
             data['current_step'] = 1
             data['current_cycle'] = 1
@@ -160,13 +172,15 @@ with col_btn3:
             st.success("All Data Cleared!")
             st.rerun()
 
-# Current Status
+# Status
 st.subheader("📊 Current Status")
 col_a, col_b = st.columns(2)
 with col_a:
+    next_amount = (data['base_amount'] if data['current_step']==1 else 
+                  (data['trade_history'][-1]['trade_amount'] + data['trade_history'][-1]['profit'] if data['trade_history'] else data['base_amount']))
     st.info(f"**Next Trade Amount:** ৳{next_amount:,.2f}")
 with col_b:
-    st.info(f"**Compounding Steps:** {data['compound_steps']}")
+    st.info(f"**Payout on Win:** {data['payout_pct']}%  |  **Profit Target:** {data['profit_target_pct']}%  |  **Loss Target:** {data['loss_target_pct']}%")
 
 # History
 st.subheader("📜 Trade History")
@@ -178,7 +192,6 @@ if data['trade_history']:
             "Cycle-Step": f"C{t['cycle']}-S{t['step']}",
             "Time": t['time'],
             "Amount": f"৳{t['trade_amount']:,.2f}",
-            "Return %": f"{t.get('return_pct', 0):+.2f}%",
             "P/L": f"৳{t['profit']:,.2f}",
             "Capital": f"৳{t['capital_after']:,.2f}",
             "Result": "🟢 WIN" if t['result']=='WIN' else "🔴 LOSS"
@@ -187,4 +200,5 @@ if data['trade_history']:
 else:
     st.info("No trades yet.")
 
+# Footer
 st.caption("Intellectual Trader - Smart Compounding Money Management System")
