@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="Intellectual Trader", layout="centered", page_icon="🧠")
 st.title("🧠 Intellectual Trader")
-st.markdown("**Fixed Risk + Compounding System**")
+st.markdown("**Fixed Risk + Compounding**")
 
 def load_data():
     file = "trading_data/session.json"
@@ -41,7 +41,7 @@ if st.sidebar.button("💾 Save Settings"):
         json.dump(data, f, indent=2)
     st.sidebar.success("✅ Saved!")
 
-# Display
+# Status
 st.subheader("📊 Status")
 st.metric("Current Capital", f"${data['current_capital']:.2f}")
 st.metric("Fixed Risk", f"${data['fixed_risk_amount']:.2f}")
@@ -49,7 +49,7 @@ st.metric("Fixed Risk", f"${data['fixed_risk_amount']:.2f}")
 # AI Suggestion
 st.subheader("🤖 AI Next Trade Suggestion")
 suggested = data["fixed_risk_amount"] + data.get("last_profit", 0.0)
-st.info(f"**Suggested Amount:** **${suggested:.2f}** (Fixed + Previous Profit)")
+st.info(f"**Suggested Amount:** **${suggested:.2f}** (Fixed Risk + Last Profit)")
 
 # Trade Entry
 st.subheader("New Trade")
@@ -64,16 +64,16 @@ if c1.button("✅ WIN TRADE", use_container_width=True):
     data["total_profit"] += profit
     data["last_profit"] = profit
     data.setdefault("trades", []).append({"time": datetime.now().strftime("%H:%M"), "symbol": symbol or "Unknown", "result": "WIN", "amount": amount})
-    st.success("WIN! Next will compound.")
+    st.success("WIN! Next Trade will use compounding.")
     st.rerun()
 
 if c2.button("❌ LOSS TRADE", use_container_width=True):
     amount = suggested
     data["current_capital"] = max(100, data["current_capital"] - amount)
     data["total_loss"] += amount
-    data["last_profit"] = 0.0   # Reset on loss
+    data["last_profit"] = 0.0
     data.setdefault("trades", []).append({"time": datetime.now().strftime("%H:%M"), "symbol": symbol or "Unknown", "result": "LOSS", "amount": amount})
-    st.error("LOSS - Reset to Fixed Amount")
+    st.error("LOSS - Reset to Fixed Risk")
     st.rerun()
 
 # Summary
